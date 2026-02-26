@@ -97,12 +97,14 @@ export default function WatchPage() {
     <main>
       <h1>👀 Watching Live Stream</h1>
       <video
-        ref={remoteVideo}
-        autoPlay
-        playsInline
-        controls
-        style={{ width: 600, borderRadius: 8 }}
-      />
+  ref={remoteVideo}
+  autoPlay
+  playsInline
+  muted   // 🔥 VERY IMPORTANT
+  controls
+  style={{ width: 600, borderRadius: 8 }}
+/>
     </main>
   );
 }
+
