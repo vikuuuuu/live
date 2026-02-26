@@ -5,101 +5,61 @@ import { useParams } from "next/navigation";
 import {
   doc,
   getDoc,
-  updateDoc,
-  collection,
-  addDoc,
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const iceServers = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
 export default function WatchPage() {
-  const { id } = useParams();
-  const remoteVideo = useRef(null);
+  const videoRef = useRef(null);
   const pc = useRef(null);
+  const { id } = useParams();
 
   useEffect(() => {
     const join = async () => {
       pc.current = new RTCPeerConnection(iceServers);
 
       pc.current.ontrack = (e) => {
-        remoteVideo.current.srcObject = e.streams[0];
-
-        // 🔥 autoplay fix
-        setTimeout(() => {
-          remoteVideo.current.play().catch(() => {});
-        }, 300);
+        videoRef.current.srcObject = e.streams[0];
       };
 
       const roomRef = doc(db, "rooms", id);
       const snap = await getDoc(roomRef);
-      if (!snap.exists()) return alert("Room not found");
-
       const data = snap.data();
 
-      await pc.current.setRemoteDescription(
-        new RTCSessionDescription(data.offer)
-      );
+      if (data?.status !== "live") {
+        alert("Stream offline");
+        return;
+      }
 
+      await pc.current.setRemoteDescription(data.offer);
       const answer = await pc.current.createAnswer();
       await pc.current.setLocalDescription(answer);
 
-      await updateDoc(roomRef, {
-        answer: {
-          type: answer.type,
-          sdp: answer.sdp,
-        },
-      });
-
-      pc.current.onicecandidate = async (e) => {
-        if (e.candidate) {
-          await addDoc(
-            collection(db, "rooms", id, "calleeCandidates"),
-            e.candidate.toJSON()
-          );
-        }
-      };
-
-      onSnapshot(
-        collection(db, "rooms", id, "callerCandidates"),
-        (snap) => {
-          snap.docChanges().forEach((c) => {
-            if (c.type === "added") {
-              pc.current.addIceCandidate(
-                new RTCIceCandidate(c.doc.data())
-              );
-            }
-          });
-        }
+      await setDoc(
+        roomRef,
+        { answer },
+        { merge: true }
       );
-
-      pc.current.oniceconnectionstatechange = () => {
-        console.log("ICE:", pc.current.iceConnectionState);
-      };
     };
 
     join();
-
     return () => pc.current?.close();
   }, [id]);
 
   return (
     <main>
-      <h1>👀 Watching Live Stream</h1>
+      <h2>👀 Watching Stream</h2>
 
       <video
-        ref={remoteVideo}
+        ref={videoRef}
         autoPlay
-        muted     // 🔥 MOST IMPORTANT
-        playsInline
         controls
-        style={{ width: 600, borderRadius: 8 }}
+        playsInline
+        style={{ width: 600 }}
       />
     </main>
   );
