@@ -127,6 +127,13 @@ export default function StreamPage() {
           {camOn ? "📷 Camera Off" : "📷 Camera On"}
         </button>
 
+          <button
+          onClick={startCall}
+          style={{ marginLeft: 10, color: "red" }}
+        >
+          ❌ End Call
+        </button>
+
         <button
           onClick={endCall}
           style={{ marginLeft: 10, color: "red" }}
@@ -139,3 +146,4 @@ export default function StreamPage() {
     </main>
   );
 }
+
