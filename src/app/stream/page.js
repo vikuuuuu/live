@@ -1,116 +1,88 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  collection,
-  addDoc,
-  setDoc,
-  doc,
-  onSnapshot,
-} from "firebase/firestore";
+import { addDoc, collection, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const iceServers = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
   ],
 };
 
 export default function StreamPage() {
-  const localVideo = useRef(null);
+  const videoRef = useRef(null);
   const pc = useRef(null);
+  const streamRef = useRef(null);
+
   const [roomId, setRoomId] = useState("");
+  const [isLive, setIsLive] = useState(false);
 
-  useEffect(() => {
-    const start = async () => {
-      pc.current = new RTCPeerConnection(iceServers);
+  const startStream = async () => {
+    pc.current = new RTCPeerConnection(iceServers);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: true,
+    });
 
-      localVideo.current.srcObject = stream;
+    streamRef.current = stream;
+    videoRef.current.srcObject = stream;
 
-      stream.getTracks().forEach((track) => {
-        pc.current.addTrack(track, stream);
-      });
+    stream.getTracks().forEach((track) =>
+      pc.current.addTrack(track, stream)
+    );
 
-      const roomRef = await addDoc(collection(db, "rooms"), {});
-      setRoomId(roomRef.id);
+    const roomRef = await addDoc(collection(db, "rooms"), {
+      status: "live",
+    });
 
-      pc.current.onicecandidate = async (e) => {
-        if (e.candidate) {
-          await addDoc(
-            collection(db, "rooms", roomRef.id, "callerCandidates"),
-            e.candidate.toJSON()
-          );
-        }
-      };
+    setRoomId(roomRef.id);
+    setIsLive(true);
 
-      const offer = await pc.current.createOffer();
-      await pc.current.setLocalDescription(offer);
+    const offer = await pc.current.createOffer();
+    await pc.current.setLocalDescription(offer);
 
-      await setDoc(doc(db, "rooms", roomRef.id), {
-        offer: {
-          type: offer.type,
-          sdp: offer.sdp,
-        },
-      });
+    await setDoc(doc(db, "rooms", roomRef.id), {
+      offer,
+      status: "live",
+    });
+  };
 
-      // listen answer
-      onSnapshot(doc(db, "rooms", roomRef.id), async (snap) => {
-        const data = snap.data();
-        if (data?.answer && !pc.current.currentRemoteDescription) {
-          await pc.current.setRemoteDescription(
-            new RTCSessionDescription(data.answer)
-          );
-        }
-      });
+  const endStream = async () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    pc.current?.close();
+    setIsLive(false);
 
-      // listen callee ICE
-      onSnapshot(
-        collection(db, "rooms", roomRef.id, "calleeCandidates"),
-        (snap) => {
-          snap.docChanges().forEach((c) => {
-            if (c.type === "added") {
-              pc.current.addIceCandidate(
-                new RTCIceCandidate(c.doc.data())
-              );
-            }
-          });
-        }
-      );
-
-      pc.current.onconnectionstatechange = () => {
-        console.log("STREAM STATE:", pc.current.connectionState);
-      };
-    };
-
-    start();
-
-    return () => {
-      pc.current?.close();
-    };
-  }, []);
+    await setDoc(
+      doc(db, "rooms", roomId),
+      { status: "offline" },
+      { merge: true }
+    );
+  };
 
   return (
     <main>
-      <h1>🔴 Live Streaming</h1>
+      <h2>🔴 Broadcaster</h2>
 
       <video
-        ref={localVideo}
+        ref={videoRef}
         autoPlay
         muted
-        playsInline
-        style={{ width: 600, borderRadius: 8 }}
+        controls
+        style={{ width: 600 }}
       />
+
+      {!isLive ? (
+        <button onClick={startStream}>▶ Start Stream</button>
+      ) : (
+        <button onClick={endStream}>⛔ End Stream</button>
+      )}
 
       {roomId && (
         <p>
-          Share link 👉 <br />
-          https://live-iota-blond.vercel.app/watch/{roomId}
+          Share link: <br />
+          <b>/watch/{roomId}</b>
         </p>
       )}
     </main>
