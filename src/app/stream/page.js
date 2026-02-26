@@ -19,39 +19,36 @@ const iceServers = {
 
 export default function StreamPage() {
   const localVideo = useRef(null);
-  const [roomId, setRoomId] = useState(null);
   const pc = useRef(null);
+  const [roomId, setRoomId] = useState("");
 
   useEffect(() => {
-    const startStream = async () => {
+    const start = async () => {
       pc.current = new RTCPeerConnection(iceServers);
 
-      // 🎥 Get camera + mic
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
+
       localVideo.current.srcObject = stream;
 
       stream.getTracks().forEach((track) => {
         pc.current.addTrack(track, stream);
       });
 
-      // 🔥 Create room
       const roomRef = await addDoc(collection(db, "rooms"), {});
       setRoomId(roomRef.id);
 
-      // 📤 ICE candidates (caller)
-      pc.current.onicecandidate = async (event) => {
-        if (event.candidate) {
+      pc.current.onicecandidate = async (e) => {
+        if (e.candidate) {
           await addDoc(
             collection(db, "rooms", roomRef.id, "callerCandidates"),
-            event.candidate.toJSON()
+            e.candidate.toJSON()
           );
         }
       };
 
-      // 📡 Create offer
       const offer = await pc.current.createOffer();
       await pc.current.setLocalDescription(offer);
 
@@ -62,42 +59,46 @@ export default function StreamPage() {
         },
       });
 
-      // 📥 Listen for answer
-      onSnapshot(doc(db, "rooms", roomRef.id), async (snapshot) => {
-        const data = snapshot.data();
-        if (!pc.current.currentRemoteDescription && data?.answer) {
-          const answer = new RTCSessionDescription(data.answer);
-          await pc.current.setRemoteDescription(answer);
+      // listen answer
+      onSnapshot(doc(db, "rooms", roomRef.id), async (snap) => {
+        const data = snap.data();
+        if (data?.answer && !pc.current.currentRemoteDescription) {
+          await pc.current.setRemoteDescription(
+            new RTCSessionDescription(data.answer)
+          );
         }
       });
 
-      // 📥 Listen for callee ICE
+      // listen callee ICE
       onSnapshot(
         collection(db, "rooms", roomRef.id, "calleeCandidates"),
-        (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            if (change.type === "added") {
-              const candidate = new RTCIceCandidate(change.doc.data());
-              pc.current.addIceCandidate(candidate);
+        (snap) => {
+          snap.docChanges().forEach((c) => {
+            if (c.type === "added") {
+              pc.current.addIceCandidate(
+                new RTCIceCandidate(c.doc.data())
+              );
             }
           });
         }
       );
+
+      pc.current.onconnectionstatechange = () => {
+        console.log("STREAM STATE:", pc.current.connectionState);
+      };
     };
 
-    startStream();
+    start();
 
     return () => {
-      if (pc.current) {
-        pc.current.close();
-        pc.current = null;
-      }
+      pc.current?.close();
     };
   }, []);
 
   return (
     <main>
       <h1>🔴 Live Streaming</h1>
+
       <video
         ref={localVideo}
         autoPlay
@@ -105,9 +106,10 @@ export default function StreamPage() {
         playsInline
         style={{ width: 600, borderRadius: 8 }}
       />
+
       {roomId && (
         <p>
-          Share this link 👉 <br />
+          Share link 👉 <br />
           https://live-iota-blond.vercel.app/watch/{roomId}
         </p>
       )}
