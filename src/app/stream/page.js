@@ -69,8 +69,7 @@ export default function StreamPage() {
       />
       {roomId && (
         <p>
-          Share this room ID with viewers:{" "}
-          <code>{roomId}</code>
+          Share this room ID with viewers:{" "} https://live-iota-blond.vercel.app/watch/{roomId}
         </p>
       )}
     </main>
