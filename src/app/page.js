@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export default function HomePage() {
   const router = useRouter();
@@ -9,29 +9,29 @@ export default function HomePage() {
 
   return (
     <main style={{ maxWidth: 400, margin: "auto" }}>
-      <h1>WebRTC Live Stream</h1>
+      <h2>🎥 Live Stream App</h2>
 
       <button
         onClick={() => router.push("/stream")}
-        style={{ width: "100%", padding: 12, marginBottom: 20 }}
+        style={{ width: "100%", padding: 12 }}
       >
-        🎥 Start Streaming
+        ▶ Start Streaming
       </button>
 
-      <h3>Watch Stream</h3>
+      <hr style={{ margin: 20 }} />
+
       <input
         placeholder="Enter Room ID"
         value={roomId}
         onChange={(e) => setRoomId(e.target.value)}
-        style={{ width: "100%", padding: 10, marginBottom: 8 }}
+        style={{ width: "100%", padding: 10 }}
       />
+
       <button
-        onClick={() => {
-          if (roomId.trim()) router.push(`/watch/${roomId.trim()}`);
-        }}
-        style={{ width: "100%", padding: 12 }}
+        onClick={() => router.push(`/watch/${roomId}`)}
+        style={{ width: "100%", padding: 12, marginTop: 8 }}
       >
-        🔗 Watch
+        👀 Watch Stream
       </button>
     </main>
   );
