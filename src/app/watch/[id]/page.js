@@ -20,35 +20,33 @@ const iceServers = {
 };
 
 export default function WatchPage() {
-  const remoteVideo = useRef(null);
   const { id } = useParams();
+  const remoteVideo = useRef(null);
   const pc = useRef(null);
 
   useEffect(() => {
-    const joinRoom = async () => {
+    const join = async () => {
       pc.current = new RTCPeerConnection(iceServers);
 
-      // 🎥 Remote stream
-      pc.current.ontrack = (event) => {
-        remoteVideo.current.srcObject = event.streams[0];
+      pc.current.ontrack = (e) => {
+        remoteVideo.current.srcObject = e.streams[0];
+
+        // 🔥 autoplay fix
+        setTimeout(() => {
+          remoteVideo.current.play().catch(() => {});
+        }, 300);
       };
 
       const roomRef = doc(db, "rooms", id);
-      const roomSnap = await getDoc(roomRef);
+      const snap = await getDoc(roomRef);
+      if (!snap.exists()) return alert("Room not found");
 
-      if (!roomSnap.exists()) {
-        alert("Room not found");
-        return;
-      }
+      const data = snap.data();
 
-      const roomData = roomSnap.data();
-
-      // 📥 Set offer
       await pc.current.setRemoteDescription(
-        new RTCSessionDescription(roomData.offer)
+        new RTCSessionDescription(data.offer)
       );
 
-      // 📡 Create answer
       const answer = await pc.current.createAnswer();
       await pc.current.setLocalDescription(answer);
 
@@ -59,52 +57,50 @@ export default function WatchPage() {
         },
       });
 
-      // 📤 ICE candidates (callee)
-      pc.current.onicecandidate = async (event) => {
-        if (event.candidate) {
+      pc.current.onicecandidate = async (e) => {
+        if (e.candidate) {
           await addDoc(
             collection(db, "rooms", id, "calleeCandidates"),
-            event.candidate.toJSON()
+            e.candidate.toJSON()
           );
         }
       };
 
-      // 📥 Listen for caller ICE
       onSnapshot(
         collection(db, "rooms", id, "callerCandidates"),
-        (snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            if (change.type === "added") {
-              const candidate = new RTCIceCandidate(change.doc.data());
-              pc.current.addIceCandidate(candidate);
+        (snap) => {
+          snap.docChanges().forEach((c) => {
+            if (c.type === "added") {
+              pc.current.addIceCandidate(
+                new RTCIceCandidate(c.doc.data())
+              );
             }
           });
         }
       );
+
+      pc.current.oniceconnectionstatechange = () => {
+        console.log("ICE:", pc.current.iceConnectionState);
+      };
     };
 
-    joinRoom();
+    join();
 
-    return () => {
-      if (pc.current) {
-        pc.current.close();
-        pc.current = null;
-      }
-    };
+    return () => pc.current?.close();
   }, [id]);
 
   return (
     <main>
       <h1>👀 Watching Live Stream</h1>
+
       <video
-  ref={remoteVideo}
-  autoPlay
-  playsInline
-  muted   // 🔥 VERY IMPORTANT
-  controls
-  style={{ width: 600, borderRadius: 8 }}
-/>
+        ref={remoteVideo}
+        autoPlay
+        muted     // 🔥 MOST IMPORTANT
+        playsInline
+        controls
+        style={{ width: 600, borderRadius: 8 }}
+      />
     </main>
   );
 }
-
