@@ -13,20 +13,31 @@ import {
 import { db } from "@/lib/firebase";
 
 const iceServers = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-  ],
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
 export default function WatchPage() {
+  const { id } = useParams();
+  const localVideo = useRef(null);
   const remoteVideo = useRef(null);
   const pc = useRef(null);
-  const { id } = useParams();
 
   useEffect(() => {
-    const join = async () => {
+    const joinCall = async () => {
       pc.current = new RTCPeerConnection(iceServers);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      localVideo.current.srcObject = stream;
+      stream.getTracks().forEach((t) =>
+        pc.current.addTrack(t, stream)
+      );
 
       pc.current.ontrack = (e) => {
         remoteVideo.current.srcObject = e.streams[0];
@@ -34,14 +45,10 @@ export default function WatchPage() {
 
       const roomRef = doc(db, "rooms", id);
       const snap = await getDoc(roomRef);
-
-      if (!snap.exists() || snap.data().status !== "live") {
-        alert("Stream offline");
-        return;
-      }
+      const data = snap.data();
 
       await pc.current.setRemoteDescription(
-        new RTCSessionDescription(snap.data().offer)
+        new RTCSessionDescription(data.offer)
       );
 
       const answer = await pc.current.createAnswer();
@@ -51,49 +58,39 @@ export default function WatchPage() {
         answer: { type: answer.type, sdp: answer.sdp },
       });
 
-      pc.current.onicecandidate = async (e) => {
-        if (e.candidate) {
-          await addDoc(
+      pc.current.onicecandidate = (e) => {
+        e.candidate &&
+          addDoc(
             collection(db, "rooms", id, "calleeCandidates"),
             e.candidate.toJSON()
           );
-        }
       };
 
       onSnapshot(
         collection(db, "rooms", id, "callerCandidates"),
-        (snap) => {
+        (snap) =>
           snap.docChanges().forEach((c) => {
             if (c.type === "added") {
               pc.current.addIceCandidate(
                 new RTCIceCandidate(c.doc.data())
               );
             }
-          });
-        }
+          })
       );
     };
 
-    join();
+    joinCall();
     return () => pc.current?.close();
   }, [id]);
 
   return (
     <main style={{ textAlign: "center" }}>
-      <h2>👀 Watching Live</h2>
+      <h2>📞 Video Call (Receiver)</h2>
 
-      <video
-        ref={remoteVideo}
-        autoPlay
-        controls
-        playsInline
-        style={{
-          width: "100%",
-          maxWidth: 700,
-          borderRadius: 10,
-          background: "#000",
-        }}
-      />
+      <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+        <video ref={localVideo} autoPlay muted playsInline width={300} />
+        <video ref={remoteVideo} autoPlay playsInline width={300} />
+      </div>
     </main>
   );
 }
