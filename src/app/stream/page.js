@@ -6,8 +6,16 @@ import {
   addDoc,
   setDoc,
   doc,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+const iceServers = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ],
+};
 
 export default function StreamPage() {
   const localVideo = useRef(null);
@@ -16,39 +24,69 @@ export default function StreamPage() {
 
   useEffect(() => {
     const startStream = async () => {
-      pc.current = new RTCPeerConnection();
+      pc.current = new RTCPeerConnection(iceServers);
 
-      // Get media
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      // 🎥 Get camera + mic
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
       localVideo.current.srcObject = stream;
 
-      // Add tracks to peer connection
       stream.getTracks().forEach((track) => {
         pc.current.addTrack(track, stream);
       });
 
-      // Create room in Firestore
+      // 🔥 Create room
       const roomRef = await addDoc(collection(db, "rooms"), {});
       setRoomId(roomRef.id);
 
-      // Listen for ICE candidates and add to Firestore
+      // 📤 ICE candidates (caller)
       pc.current.onicecandidate = async (event) => {
         if (event.candidate) {
-          await addDoc(collection(db, "rooms", roomRef.id, "callerCandidates"), event.candidate.toJSON());
+          await addDoc(
+            collection(db, "rooms", roomRef.id, "callerCandidates"),
+            event.candidate.toJSON()
+          );
         }
       };
 
-      // Create offer
+      // 📡 Create offer
       const offer = await pc.current.createOffer();
       await pc.current.setLocalDescription(offer);
 
-      // Save offer in Firestore
-      await setDoc(doc(db, "rooms", roomRef.id), { offer: { type: offer.type, sdp: offer.sdp } });
+      await setDoc(doc(db, "rooms", roomRef.id), {
+        offer: {
+          type: offer.type,
+          sdp: offer.sdp,
+        },
+      });
+
+      // 📥 Listen for answer
+      onSnapshot(doc(db, "rooms", roomRef.id), async (snapshot) => {
+        const data = snapshot.data();
+        if (!pc.current.currentRemoteDescription && data?.answer) {
+          const answer = new RTCSessionDescription(data.answer);
+          await pc.current.setRemoteDescription(answer);
+        }
+      });
+
+      // 📥 Listen for callee ICE
+      onSnapshot(
+        collection(db, "rooms", roomRef.id, "calleeCandidates"),
+        (snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            if (change.type === "added") {
+              const candidate = new RTCIceCandidate(change.doc.data());
+              pc.current.addIceCandidate(candidate);
+            }
+          });
+        }
+      );
     };
 
     startStream();
 
-    // Cleanup on unmount
     return () => {
       if (pc.current) {
         pc.current.close();
@@ -59,17 +97,18 @@ export default function StreamPage() {
 
   return (
     <main>
-      <h1>Streaming...</h1>
+      <h1>🔴 Live Streaming</h1>
       <video
         ref={localVideo}
         autoPlay
-        playsInline
         muted
-        style={{ width: "600px", borderRadius: 8 }}
+        playsInline
+        style={{ width: 600, borderRadius: 8 }}
       />
       {roomId && (
         <p>
-          Share this room ID with viewers:{" "} https://live-iota-blond.vercel.app/watch/{roomId}
+          Share this link 👉 <br />
+          https://live-iota-blond.vercel.app/watch/{roomId}
         </p>
       )}
     </main>
